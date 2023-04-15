@@ -8,8 +8,10 @@
 #include <random>
 #include <algorithm>
 #include <iterator>
+#include <chrono>
 
 using namespace std;
+using namespace std::chrono;
 
 random_device                  rand_dev;
 mt19937                        generator(rand_dev());
@@ -39,7 +41,6 @@ class Node {
         bool isTerminal;
         unordered_set<vector<int>, VectorHash> possible_moves; // [x, y, len, direction]
 
-        static const double exploration_factor = 2.718;
 
         Node(){
 
@@ -69,7 +70,7 @@ class Node {
             
             for(int i=0; i<BOARD_SIZE; i++)
                 for(int j=0; j<BOARD_SIZE; j++){
-                    if(state[i][j] == 1) 
+                    if(state[i][j] != 0) 
                         continue;
                     action[0] = i;  // base case: len = 1
                     action[1] = j;
@@ -82,7 +83,7 @@ class Node {
                         vector<int> pos = Next_Node(i, j, dir);
                         int x = pos[0], y = pos[1];
                         for(int len=2; len<=LEN_SIZE; len++){
-                            if(!(0<=x and x<BOARD_SIZE) or !(0<=y and y<BOARD_SIZE) or state[x][y] == 1)
+                            if(!(0<=x and x<BOARD_SIZE) or !(0<=y and y<BOARD_SIZE) or state[x][y] != 0)
                                 break;
 
                             action[2] = len;
@@ -95,7 +96,7 @@ class Node {
         }
 
         /* calculate current UCT score of this node */
-        double get_score(){
+        double get_score(double exploration_factor){
             return  ((double) winCount/visitCount) + exploration_factor * sqrt(log(parent->visitCount)/visitCount);
         }
 
@@ -156,21 +157,26 @@ class MCTS {
         vector<vector<int> > rootMoves;
         int NUMBER_OF_RUNS; // number of runs, hyperparameter
         int ROUNDS; // number of simulation, hyperparameter
+        double exploration_factor;
 
-        MCTS(vector<vector<int> > state, int NUMBER_OF_RUNS, int ROUNDS){
+        MCTS(vector<vector<int> > state, int NUMBER_OF_RUNS, int ROUNDS, double exploration_factor){
             this->rootMoves = vector<vector<int> >();
             this->root = Node(NULL, state, 0);
             this->NUMBER_OF_RUNS = NUMBER_OF_RUNS;
             this->ROUNDS = ROUNDS;
+            this->exploration_factor = exploration_factor;
         }
         
         void main(){
+                    auto begin = high_resolution_clock::now();
             while(this->NUMBER_OF_RUNS--){
                 Node* node = selection(&root);
                 expand(node);
                     // cout << "✅ end one round of simulation" << endl;   // DEBUG
             }
-            // TODO: just set timeout here
+                    auto end = high_resolution_clock::now();
+                    auto duration = duration_cast<milliseconds>(end - begin);
+                    cout << "Elapsed Time: " << duration.count() << endl;
         }
 
         /* select a node that is NOT fully expanded */
@@ -196,7 +202,7 @@ class MCTS {
             Node *ptr = NULL;
             for(auto& child: node->children){
                     // cout << "get_score: " << child.winCount << " " << child.visitCount << " " << child.parent->visitCount << endl;    // DEBUG
-                double score = child.get_score();
+                double score = child.get_score(exploration_factor);
                         // cout << i++ << "th score: " << score << endl;          // DEBUG
                 if(score > maxScore){
                     maxScore = score;
@@ -307,50 +313,51 @@ class MCTS {
     input position (x,y) and direction
     output next node position on this direction
 */
-vector<int> Next_Node(int i, int j, int direction) {
+vector<int> Next_Node(int pos_x, int pos_y, int direction) {
     vector<int> result(2);
-
-    if (i % 2 == 1) {
+    
+    if (pos_y % 2 == 1) {
         if (direction == 1) {
-            result[1] = j;
-            result[0] = i - 1;
+            result[0] = pos_x;
+            result[1] = pos_y - 1;
         }
         else if (direction == 2) {
-            result[1] = j + 1;
-            result[0] = i - 1;
+            result[0] = pos_x + 1;
+            result[1] = pos_y - 1;
         }
         else if (direction == 3) {
-            result[1] = j - 1;
-            result[0] = i;
+            result[0] = pos_x - 1;
+            result[1] = pos_y;
         }
     }
     else {
         if (direction == 1) {
-            result[1] = j - 1;
-            result[0] = i - 1;
+            result[0] = pos_x - 1;
+            result[1] = pos_y - 1;
         }
         else if (direction == 2) {
-            result[1] = j;
-            result[0] = i - 1;
+            result[0] = pos_x;
+            result[1] = pos_y - 1;
         }
         else if (direction == 3) {
-            result[1] = j - 1;
-            result[0] = i;
+            result[0] = pos_x - 1;
+            result[1] = pos_y;
         }
     }
     return result;
 }
 
 void print_state(const vector<vector<int> >& state){
+    int N = 12;
     int z = false;
-    for (auto& v: state){
+    for (size_t j = 0; j < N; j++){
         if(z)  cout << " ";
         z = !z;
 
-        for (auto& x: v)
-            cout << x << " ";
+        for (size_t i = 0; i < N; i++)
+            cout << state[i][j] << " ";
 
-        cerr << endl;
+        cout << endl;
     }
 }
 
@@ -413,6 +420,9 @@ void test_generate_move(){
     node.generate_possible_moves();
 
     for (auto& v: node.possible_moves){
+        for(auto&i:v)
+            cout<< i << " ";
+            cout<< endl;
         int x = v[0];
         int y = v[1];
         int LEN = v[2];
@@ -420,7 +430,7 @@ void test_generate_move(){
         
         for(int len=1; len<=LEN; len++){
             // if(!(0<=x and x<N) or !(0<=y and y<N)){
-            if(!(0<=x and x<N) or !(0<=y and y<N) or state[x][y] == 1){
+            if(!(0<=x and x<N) or !(0<=y and y<N) or state[x][y] != 0){
                 cerr << "Test failed: test_generate_move" << endl;
                 cerr << "❌ wrong move" << endl;
                 throw exception();
@@ -433,7 +443,7 @@ void test_generate_move(){
         cout<< "✅ Test passed" <<endl;
 }
 
-void test_play(){
+int test_play(){
     int N = 12;
     vector<vector<int> > state = generate_board(80);
 
@@ -444,10 +454,20 @@ void test_play(){
         cout << "player" << player_no << " move:" << endl;
         if(player_no == 0){
             // me: MCTS
-            MCTS mcts(state, 1000, 10);
+                    auto begin = high_resolution_clock::now();
+            MCTS mcts(state, 1000, 2, 0.1);
+                    auto end = high_resolution_clock::now();
+                    auto duration = duration_cast<milliseconds>(end - begin);
+                    cout << "MCTS init time: " << duration.count() <<endl;
+
             mcts.main();
                         // cout << "BEGIN get_best_move()" << endl;          // DEBUG
+                    begin = high_resolution_clock::now();
             action = mcts.get_best_move();
+                    end = high_resolution_clock::now();
+                    duration = duration_cast<milliseconds>(end - begin);
+                    cout << "get_best_move time: " << duration.count() <<endl;
+
                         // cout << "END get_best_move()" << endl;          // DEBUG
         }else{
             // opponent: random move
@@ -458,7 +478,7 @@ void test_play(){
             // advance(it, distr(generator));
             // action = *it;
 
-            MCTS mcts(state, 100, 10);
+            MCTS mcts(state, 1000, 2, 0.01);
             mcts.main();
                         // cout << "BEGIN get_best_move()" << endl;          // DEBUG
             action = mcts.get_best_move();
@@ -474,12 +494,13 @@ void test_play(){
             cout<< i << " ";
         cout << endl;
         print_state(state);
+        cout<<endl;
         
         player_no = !player_no;
 
         if(check_isTerminal(state)){
             cout << "winner: " << player_no << endl;
-            return;
+            return player_no;
         }
     }
 }
@@ -497,20 +518,6 @@ void test_play(){
             3  x  4
               5  6
 */
-// vector<int> GetStep(int mapStat[12][12], int gameStat[12][12])
-// {
-//     vector<int> step;
-//     step.resize(4);
-    
-//     // TODO: create state matrix
-//     vector<vector<int> > state;
-//     MCTS mcts(state);
-//     mcts.main();
-
-//     step = mcts.get_best_move();
-
-//     return step;
-// }
 
 int main()
 {
@@ -523,7 +530,18 @@ int main()
         // test_generate_move();
     // return 0;
 
-    test_play();
+    vector<int> wins(2);
+    for (size_t i = 0; i < 100; i++){
+        cout<< "[Round " << i << "]" << endl;
+        int winner = test_play();
+        wins[winner]++;
+    }
+    cout<< "Stats:" << endl;
+    printf("player 0: 1000, 2, 0.1\n");
+    printf("player 1: 1000, 2, 0.01\n");
+    cout<<"\tplayer 0: " << wins[0] << endl;
+    cout<<"\tplayer 1: " << wins[1] << endl;
+    
 
     //  comment out temporarily
 
